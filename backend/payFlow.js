@@ -26,7 +26,7 @@ export async function createCheckout(req, res) {
     }
 
     // ✅ Append referenceId to redirect URL for frontend success tracking
-    const redirectUrl = `http://localhost:8081/reserva/concluida?referenceId=${referenceId}`;
+    const redirectUrl = `hotelbrasileiro://reservas/reservaFinish`;
 
     const payload = {
       reference_id: referenceId,
@@ -113,7 +113,7 @@ export async function createReservationAndPayment(req, res) {
       customer,
       items,
       notification_urls: [process.env.PAGSEGURO_NOTIFICATION_URL],
-      redirect_url: `http://localhost:8081/reserva/concluida?referenceId=${referenceId}`,
+      redirect_url: `hotelbrasileiro://reservas/reservaFinish`,
     };
 
     const response = await fetch(SANDBOX_URL, {
