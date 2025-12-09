@@ -1,4 +1,3 @@
-
 import sendTokenEmail from '../nodemailer.js';
 import bcrypt from 'bcrypt';
 import { sql } from "../config/db.js";
@@ -279,5 +278,87 @@ export const redefinirSenhaPorEmail = async (req, res) => {
   } catch (err) {
     console.error('[POST /clientes/update-password] Erro ao redefinir senha:', err);
     return res.status(500).json({ success: false, message: 'Erro ao redefinir senha.' });
+  }
+};
+
+// Generate and send confirmation code for sign-up
+export const sendConfirmationCode = async (req, res) => {
+  const { nome, email, telefone, senha } = req.body;
+
+  if (!nome || !email || !telefone || !senha) {
+    return res.status(400).json({ success: false, message: "Preencha todos os campos." });
+  }
+
+  try {
+    // Generate a secure confirmation code
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let confirmationCode = "";
+    for (let i = 0; i < 6; i++) {
+      confirmationCode += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    // Save the code temporarily in the database (or cache)
+    await sql`
+      INSERT INTO pending_signups (nome, email, telefone, senha, confirmation_code)
+      VALUES (${nome}, ${email}, ${telefone}, ${senha}, ${confirmationCode})
+    `;
+
+    // Send the confirmation code via email
+    await sendTokenEmail(email, confirmationCode);
+
+    res.status(200).json({ success: true, message: "Código de confirmação enviado para o email." });
+  } catch (error) {
+    console.error("[POST /clientes/send-confirmation-code] Erro:", error);
+    res.status(500).json({ success: false, message: "Erro ao enviar código de confirmação." });
+  }
+};
+
+// Verify confirmation code and complete sign-up
+export const confirmSignup = async (req, res) => {
+  const { email, code, senha } = req.body;
+
+  if (!email || !code || !senha) {
+    return res.status(400).json({ success: false, message: "Campos obrigatórios não preenchidos." });
+  }
+
+  try {
+    // Check if the code matches
+    const [pendingUser] = await sql`
+      SELECT * FROM pending_signups WHERE email = ${email} AND confirmation_code = ${code}
+    `;
+
+    if (!pendingUser) {
+      return res.status(400).json({ success: false, message: "Código inválido ou expirado." });
+    }
+
+    // Hash the password and save the user to the database
+    const senhaHash = await bcrypt.hash(senha, 10);
+    const novoCliente = await sql`
+      INSERT INTO clientes (nome, email, telefone, senha)
+      VALUES (${pendingUser.nome}, ${pendingUser.email}, ${pendingUser.telefone}, ${senhaHash})
+      RETURNING id, nome, email, telefone;
+    `;
+
+    // Generate a JWT token
+    const token = jwt.sign(
+      {
+        id: novoCliente[0].id,
+        nome: novoCliente[0].nome,
+        email: novoCliente[0].email,
+        telefone: novoCliente[0].telefone,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    // Clean up the pending sign-up entry
+    await sql`
+      DELETE FROM pending_signups WHERE email = ${email}
+    `;
+
+    res.status(200).json({ success: true, token });
+  } catch (error) {
+    console.error("[POST /clientes/confirm-signup] Erro:", error);
+    res.status(500).json({ success: false, message: "Erro ao confirmar cadastro." });
   }
 };
