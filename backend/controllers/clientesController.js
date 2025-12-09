@@ -304,7 +304,7 @@ export const sendConfirmationCode = async (req, res) => {
     `;
 
     // Send the confirmation code via email
-    await sendTokenEmail(email, confirmationCode);
+    await sendTokenEmail(email, confirmationCode, 'confirmacao');
 
     res.status(200).json({ success: true, message: "Código de confirmação enviado para o email." });
   } catch (error) {
