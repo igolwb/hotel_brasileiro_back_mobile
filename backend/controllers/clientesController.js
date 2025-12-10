@@ -280,3 +280,79 @@ export const redefinirSenhaPorEmail = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Erro ao redefinir senha.' });
   }
 };
+
+// Gera e envia código de confirmação de cadastro para o email do usuário
+export const enviarCodigoConfirmacao = async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, message: 'Email é obrigatório.' });
+  }
+  try {
+    const [user] = await sql`SELECT * FROM clientes WHERE email = ${email}`;
+    if (user) {
+      return res.status(409).json({ success: false, message: 'Email já cadastrado.' });
+    }
+
+    // Gerar código seguro de 6 caracteres (A-Z, 0-9)
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let codigo = '';
+    for (let i = 0; i < 6; i++) {
+      codigo += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    // Definir expiração para 1 hora a partir de agora
+    const expiration = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+    // Salvar código e expiração no banco
+    const novoUsuario = await sql`
+      INSERT INTO clientes (email, confirmacao_codigo, confirmacao_expiracao)
+      VALUES (${email}, ${codigo}, ${expiration})
+      RETURNING id;
+    `;
+
+    // Enviar email
+    await sendTokenEmail(email, codigo, 'confirmacao');
+    return res.status(200).json({ success: true, message: 'Código de confirmação enviado para o email.', userId: novoUsuario[0].id });
+  } catch (error) {
+    console.error('[POST /clientes/send-confirmation-code] Erro ao enviar código de confirmação:', error);
+    return res.status(500).json({ success: false, message: 'Erro ao enviar código de confirmação.' });
+  }
+};
+
+// Confirma o código de cadastro e completa o registro do usuário
+export const confirmarCadastro = async (req, res) => {
+  const { userId, codigo, nome, telefone, senha } = req.body;
+  if (!userId || !codigo || !nome || !telefone || !senha) {
+    return res.status(400).json({ success: false, message: 'Todos os campos são obrigatórios.' });
+  }
+  try {
+    const [user] = await sql`SELECT * FROM clientes WHERE id = ${userId}`;
+    if (!user || !user.confirmacao_codigo || !user.confirmacao_expiracao) {
+      return res.status(404).json({ success: false, message: 'Usuário não encontrado ou código inválido.' });
+    }
+
+    const now = new Date();
+    const expiration = new Date(user.confirmacao_expiracao);
+    if (user.confirmacao_codigo !== codigo) {
+      return res.status(401).json({ success: false, message: 'Código inválido.' });
+    }
+    if (now > expiration) {
+      return res.status(401).json({ success: false, message: 'Código expirado. Solicite um novo.' });
+    }
+
+    // Hash da senha antes de salvar
+    const senhaHash = await bcrypt.hash(senha, 10);
+
+    // Completar o cadastro
+    await sql`
+      UPDATE clientes
+      SET nome = ${nome}, telefone = ${telefone}, senha = ${senhaHash}, confirmacao_codigo = NULL, confirmacao_expiracao = NULL
+      WHERE id = ${userId};
+    `;
+
+    return res.status(200).json({ success: true, message: 'Cadastro confirmado com sucesso.' });
+  } catch (error) {
+    console.error('[POST /clientes/confirm-signup] Erro ao confirmar cadastro:', error);
+    return res.status(500).json({ success: false, message: 'Erro ao confirmar cadastro.' });
+  }
+};
