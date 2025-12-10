@@ -26,7 +26,7 @@ export async function createCheckout(req, res) {
     }
 
     // ✅ Append referenceId to redirect URL for frontend success tracking
-    const redirectUrl = `https://querulous-roberta-igoty1910-ebd088ba.koyeb.app/redirect/success`;
+    const redirectUrl = `https://redirecturl-ppv3.onrender.com/redirect/success`;
 
     const payload = {
       reference_id: referenceId,
