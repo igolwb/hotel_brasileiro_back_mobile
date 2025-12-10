@@ -34,7 +34,7 @@ const getLocalIP = () => {
 const app = express();
 const LOCAL_IP = getLocalIP();
 const WEB_FRONT_PORT = process.env.WEB_FRONT_PORT || `http://localhost:8081`;
-const WEB_BACK_PORT = process.env.WEB_BACK_PORT || `https://hotel-brasileiro-back-mobile.onrender.com/`;
+const WEB_BACK_PORT = process.env.WEB_BACK_PORT || `https://hotel-brasileiro-back-mobile.onrender.com`;
 const JWT_SECRET = process.env.JWT_SECRET;
 
 // Middlewares
@@ -162,4 +162,5 @@ startdb().then(() => {
   app.listen(3000, () => {
     console.log(`Servidor rodando na porta ${WEB_BACK_PORT}`);
   });
+
 });
