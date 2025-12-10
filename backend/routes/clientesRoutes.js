@@ -13,7 +13,8 @@ import {
   enviarTokenRecuperacao,
   verificarTokenRecuperacao,
   redefinirSenhaPorEmail,
-  confirmarCliente
+  confirmarCliente,
+  enviarCodigoConfirmacao
 } from '../controllers/clientesController.js';
 
 
@@ -29,6 +30,7 @@ router.delete('/:id', authenticateToken, deletarCliente);
 router.post('/', criarCliente);
 router.post('/send-token', enviarTokenRecuperacao);
 router.post('/send-token-verify', verificarTokenRecuperacao);
+router.post('/send-confirmation-code', enviarCodigoConfirmacao);
 
 // Rota para redefinir senha usando email
 router.post('/update-password', redefinirSenhaPorEmail);
