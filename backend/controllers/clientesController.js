@@ -281,78 +281,23 @@ export const redefinirSenhaPorEmail = async (req, res) => {
   }
 };
 
-// Cria um novo cliente temporário e envia código de confirmação por email
-export const criarClienteTemporario = async (req, res) => {
-  const { nome, email, telefone, senha } = req.body;
-
-  if (!nome || !email || !telefone || !senha) {
-    console.warn('[POST /clientes/temp] Campos obrigatórios não preenchidos:', req.body);
-    return res.status(400).json({ success: false, message: 'Preencha todos os campos!' });
-  }
+// Atualiza o endpoint para confirmar código e criar cliente definitivo
+export const confirmarCliente = async (req, res) => {
+  const { nome, email, telefone, senha, confirmationCode } = req.body;
 
   try {
-    // Gerar código de confirmação
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let confirmationCode = '';
-    for (let i = 0; i < 6; i++) {
-      confirmationCode += chars.charAt(Math.floor(Math.random() * chars.length));
+    if (!nome || !email || !telefone || !senha || !confirmationCode) {
+      return res.status(400).json({ success: false, message: 'Preencha todos os campos obrigatórios.' });
     }
 
     // Hash da senha antes de salvar
     const senhaHash = await bcrypt.hash(senha, 10);
 
-    // Salvar cliente temporário no banco
-    await sql`
-      INSERT INTO clientes_temp (nome, email, telefone, senha, confirmation_code)
-      VALUES (${nome}, ${email}, ${telefone}, ${senhaHash}, ${confirmationCode})
-    `;
-
-    // Enviar email com o código de confirmação
-    await sendTokenEmail(email, confirmationCode, 'confirmacao');
-
-    console.log('[POST /clientes/temp] Cliente temporário criado:', { nome, email, telefone });
-    res.status(201).json({ success: true, message: 'Código de confirmação enviado para o email.' });
-  } catch (error) {
-    console.error('[POST /clientes/temp] Erro na função criarClienteTemporario:', error);
-
-    // Código de erro para violação de unicidade no PostgreSQL
-    if (error.code === '23505') {
-      return res.status(409).json({
-        success: false,
-        message: 'Email já cadastrado.'
-      });
-    }
-
-    res.status(500).json({ success: false, message: 'Erro interno no servidor' });
-  }
-};
-
-// Atualiza o endpoint para confirmar código e criar cliente definitivo
-export const confirmarCliente = async (req, res) => {
-  const { confirmationCode } = req.body;
-
-  try {
-    // Buscar informações do cliente no banco temporário
-    const tempUser = await sql`
-      SELECT * FROM clientes_temp WHERE confirmation_code = ${confirmationCode}
-    `;
-
-    if (!tempUser.length) {
-      return res.status(404).json({ success: false, message: 'Código de confirmação inválido ou expirado.' });
-    }
-
-    const { nome, email, telefone, senha } = tempUser[0];
-
-    // Criar cliente definitivo
+    // Cria o usuário diretamente
     const novoCliente = await sql`
       INSERT INTO clientes (nome, email, telefone, senha)
-      VALUES (${nome}, ${email}, ${telefone}, ${senha})
+      VALUES (${nome}, ${email}, ${telefone}, ${senhaHash})
       RETURNING id, nome, email, telefone;
-    `;
-
-    // Remover cliente temporário
-    await sql`
-      DELETE FROM clientes_temp WHERE confirmation_code = ${confirmationCode}
     `;
 
     // Gerar token JWT
