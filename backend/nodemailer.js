@@ -19,7 +19,7 @@ const sendTokenEmail = async (email, token, tipo) => {
 
 	try {
 		const { data, error } = await resend.emails.send({
-			from: 'Hotel Brasileiro <no-reply@hotelbrasileiro.com>',
+			from: 'Resend <onboarding@resend.dev>',
 			to: [email],
 			subject,
 			html,
