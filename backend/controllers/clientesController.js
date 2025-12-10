@@ -329,32 +329,27 @@ export const criarClienteTemporario = async (req, res) => {
 
 // Confirma o código e cria o cliente definitivo
 export const confirmarCliente = async (req, res) => {
-  const { email, confirmationCode } = req.body;
+  const { nome, email, telefone, senha, confirmationCode } = req.body;
 
-  if (!email || !confirmationCode) {
-    return res.status(400).json({ success: false, message: 'Email e código de confirmação são obrigatórios.' });
+  if (!nome || !email || !telefone || !senha || !confirmationCode) {
+    return res.status(400).json({ success: false, message: 'Todos os campos são obrigatórios.' });
   }
 
   try {
-    // Verificar cliente temporário
-    const [tempUser] = await sql`
-      SELECT * FROM clientes_temp WHERE email = ${email} AND confirmation_code = ${confirmationCode}
-    `;
-
-    if (!tempUser) {
-      return res.status(404).json({ success: false, message: 'Código de confirmação inválido ou expirado.' });
+    // Verificar código de confirmação
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    if (confirmationCode.length !== 6 || !confirmationCode.split('').every(char => chars.includes(char))) {
+      return res.status(400).json({ success: false, message: 'Código de confirmação inválido.' });
     }
+
+    // Hash da senha antes de salvar
+    const senhaHash = await bcrypt.hash(senha, 10);
 
     // Criar cliente definitivo
     const novoCliente = await sql`
       INSERT INTO clientes (nome, email, telefone, senha)
-      VALUES (${tempUser.nome}, ${tempUser.email}, ${tempUser.telefone}, ${tempUser.senha})
+      VALUES (${nome}, ${email}, ${telefone}, ${senhaHash})
       RETURNING id, nome, email, telefone;
-    `;
-
-    // Remover cliente temporário
-    await sql`
-      DELETE FROM clientes_temp WHERE email = ${email}
     `;
 
     // Gerar token JWT
