@@ -13,7 +13,6 @@ import {
   enviarTokenRecuperacao,
   verificarTokenRecuperacao,
   redefinirSenhaPorEmail,
-  criarClienteTemporario,
   confirmarCliente
 } from '../controllers/clientesController.js';
 
