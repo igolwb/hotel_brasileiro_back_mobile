@@ -1,4 +1,3 @@
-
 import sendTokenEmail from '../nodemailer.js';
 import bcrypt from 'bcrypt';
 import { sql } from "../config/db.js";
@@ -228,7 +227,7 @@ export const enviarTokenRecuperacao = async (req, res) => {
       WHERE id = ${user.id}
     `;
     // Enviar email
-    await sendTokenEmail(email, token);
+    await sendTokenEmail(email, token, 'recuperacao');
     return res.status(200).json({ success: true, message: 'Token enviado para o email.' });
   } catch (error) {
     console.error('[POST /clientes/send-token] Erro ao enviar token:', error);
