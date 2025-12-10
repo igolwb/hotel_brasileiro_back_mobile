@@ -285,35 +285,32 @@ export const redefinirSenhaPorEmail = async (req, res) => {
 export const confirmarCliente = async (req, res) => {
   const { nome, email, telefone, senha, confirmationCode } = req.body;
 
+  if (!nome || !email || !telefone || !senha) {
+    return res.status(400).json({ success: false, message: 'Preencha todos os campos obrigatórios.' });
+  }
+
   try {
-    if (!nome || !email || !telefone || !senha || !confirmationCode) {
-      return res.status(400).json({ success: false, message: 'Preencha todos os campos obrigatórios.' });
+    // Check if the email already exists
+    const [existingUser] = await sql`SELECT * FROM clientes WHERE email = ${email}`;
+    if (existingUser) {
+      return res.status(409).json({ success: false, message: 'Email já cadastrado.' });
     }
 
-    // Hash da senha antes de salvar
+    // Generate a confirmation code
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let generatedCode = '';
+    for (let i = 0; i < 6; i++) {
+      generatedCode += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    // Hash the password
     const senhaHash = await bcrypt.hash(senha, 10);
 
-    // Cria o usuário diretamente
-    const novoCliente = await sql`
-      INSERT INTO clientes (nome, email, telefone, senha)
-      VALUES (${nome}, ${email}, ${telefone}, ${senhaHash})
-      RETURNING id, nome, email, telefone;
-    `;
+    // Send confirmation email
+    await sendTokenEmail(email, generatedCode, 'confirmacao');
 
-    // Gerar token JWT
-    const token = jwt.sign(
-      {
-        id: novoCliente[0].id,
-        nome: novoCliente[0].nome,
-        email: novoCliente[0].email,
-        telefone: novoCliente[0].telefone
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
-
-    console.log('[POST /clientes/confirm] Cliente confirmado e criado:', novoCliente[0]);
-    res.status(201).json({ success: true, data: novoCliente[0], token });
+    console.log('[POST /clientes/confirm] Código de confirmação enviado para:', email);
+    res.status(200).json({ success: true, message: 'Código de confirmação enviado para o email.' });
   } catch (error) {
     console.error('[POST /clientes/confirm] Erro na função confirmarCliente:', error);
     res.status(500).json({ success: false, message: 'Erro interno no servidor' });
