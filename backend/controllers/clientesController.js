@@ -326,3 +326,51 @@ export const criarClienteTemporario = async (req, res) => {
     res.status(500).json({ success: false, message: 'Erro interno no servidor' });
   }
 };
+
+// Atualiza o endpoint para confirmar código e criar cliente definitivo
+export const confirmarCliente = async (req, res) => {
+  const { confirmationCode } = req.body;
+
+  try {
+    // Buscar informações do cliente no banco temporário
+    const tempUser = await sql`
+      SELECT * FROM clientes_temp WHERE confirmation_code = ${confirmationCode}
+    `;
+
+    if (!tempUser.length) {
+      return res.status(404).json({ success: false, message: 'Código de confirmação inválido ou expirado.' });
+    }
+
+    const { nome, email, telefone, senha } = tempUser[0];
+
+    // Criar cliente definitivo
+    const novoCliente = await sql`
+      INSERT INTO clientes (nome, email, telefone, senha)
+      VALUES (${nome}, ${email}, ${telefone}, ${senha})
+      RETURNING id, nome, email, telefone;
+    `;
+
+    // Remover cliente temporário
+    await sql`
+      DELETE FROM clientes_temp WHERE confirmation_code = ${confirmationCode}
+    `;
+
+    // Gerar token JWT
+    const token = jwt.sign(
+      {
+        id: novoCliente[0].id,
+        nome: novoCliente[0].nome,
+        email: novoCliente[0].email,
+        telefone: novoCliente[0].telefone
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    console.log('[POST /clientes/confirm] Cliente confirmado e criado:', novoCliente[0]);
+    res.status(201).json({ success: true, data: novoCliente[0], token });
+  } catch (error) {
+    console.error('[POST /clientes/confirm] Erro na função confirmarCliente:', error);
+    res.status(500).json({ success: false, message: 'Erro interno no servidor' });
+  }
+};
