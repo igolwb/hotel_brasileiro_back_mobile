@@ -281,78 +281,98 @@ export const redefinirSenhaPorEmail = async (req, res) => {
   }
 };
 
-// Gera e envia código de confirmação de cadastro para o email do usuário
-export const enviarCodigoConfirmacao = async (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ success: false, message: 'Email é obrigatório.' });
-  }
-  try {
-    const [user] = await sql`SELECT * FROM clientes WHERE email = ${email}`;
-    if (user) {
-      return res.status(409).json({ success: false, message: 'Email já cadastrado.' });
-    }
+// Cria um novo cliente temporário e envia código de confirmação por email
+export const criarClienteTemporario = async (req, res) => {
+  const { nome, email, telefone, senha } = req.body;
 
-    // Gerar código seguro de 6 caracteres (A-Z, 0-9)
+  if (!nome || !email || !telefone || !senha) {
+    console.warn('[POST /clientes/temp] Campos obrigatórios não preenchidos:', req.body);
+    return res.status(400).json({ success: false, message: 'Preencha todos os campos!' });
+  }
+
+  try {
+    // Gerar código de confirmação
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let codigo = '';
+    let confirmationCode = '';
     for (let i = 0; i < 6; i++) {
-      codigo += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-
-    // Definir expiração para 1 hora a partir de agora
-    const expiration = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
-
-    // Salvar código e expiração no banco
-    const novoUsuario = await sql`
-      INSERT INTO clientes (email, confirmacao_codigo, confirmacao_expiracao)
-      VALUES (${email}, ${codigo}, ${expiration})
-      RETURNING id;
-    `;
-
-    // Enviar email
-    await sendTokenEmail(email, codigo, 'confirmacao');
-    return res.status(200).json({ success: true, message: 'Código de confirmação enviado para o email.', userId: novoUsuario[0].id });
-  } catch (error) {
-    console.error('[POST /clientes/send-confirmation-code] Erro ao enviar código de confirmação:', error);
-    return res.status(500).json({ success: false, message: 'Erro ao enviar código de confirmação.' });
-  }
-};
-
-// Confirma o código de cadastro e completa o registro do usuário
-export const confirmarCadastro = async (req, res) => {
-  const { userId, codigo, nome, telefone, senha } = req.body;
-  if (!userId || !codigo || !nome || !telefone || !senha) {
-    return res.status(400).json({ success: false, message: 'Todos os campos são obrigatórios.' });
-  }
-  try {
-    const [user] = await sql`SELECT * FROM clientes WHERE id = ${userId}`;
-    if (!user || !user.confirmacao_codigo || !user.confirmacao_expiracao) {
-      return res.status(404).json({ success: false, message: 'Usuário não encontrado ou código inválido.' });
-    }
-
-    const now = new Date();
-    const expiration = new Date(user.confirmacao_expiracao);
-    if (user.confirmacao_codigo !== codigo) {
-      return res.status(401).json({ success: false, message: 'Código inválido.' });
-    }
-    if (now > expiration) {
-      return res.status(401).json({ success: false, message: 'Código expirado. Solicite um novo.' });
+      confirmationCode += chars.charAt(Math.floor(Math.random() * chars.length));
     }
 
     // Hash da senha antes de salvar
     const senhaHash = await bcrypt.hash(senha, 10);
 
-    // Completar o cadastro
+    // Salvar cliente temporário no banco
     await sql`
-      UPDATE clientes
-      SET nome = ${nome}, telefone = ${telefone}, senha = ${senhaHash}, confirmacao_codigo = NULL, confirmacao_expiracao = NULL
-      WHERE id = ${userId};
+      INSERT INTO clientes_temp (nome, email, telefone, senha, confirmation_code)
+      VALUES (${nome}, ${email}, ${telefone}, ${senhaHash}, ${confirmationCode})
     `;
 
-    return res.status(200).json({ success: true, message: 'Cadastro confirmado com sucesso.' });
+    // Enviar email com o código de confirmação
+    await sendTokenEmail(email, confirmationCode, 'confirmacao');
+
+    console.log('[POST /clientes/temp] Cliente temporário criado:', { nome, email, telefone });
+    res.status(201).json({ success: true, message: 'Código de confirmação enviado para o email.' });
   } catch (error) {
-    console.error('[POST /clientes/confirm-signup] Erro ao confirmar cadastro:', error);
-    return res.status(500).json({ success: false, message: 'Erro ao confirmar cadastro.' });
+    console.error('[POST /clientes/temp] Erro na função criarClienteTemporario:', error);
+
+    // Código de erro para violação de unicidade no PostgreSQL
+    if (error.code === '23505') {
+      return res.status(409).json({
+        success: false,
+        message: 'Email já cadastrado.'
+      });
+    }
+
+    res.status(500).json({ success: false, message: 'Erro interno no servidor' });
+  }
+};
+
+// Confirma o código e cria o cliente definitivo
+export const confirmarCliente = async (req, res) => {
+  const { email, confirmationCode } = req.body;
+
+  if (!email || !confirmationCode) {
+    return res.status(400).json({ success: false, message: 'Email e código de confirmação são obrigatórios.' });
+  }
+
+  try {
+    // Verificar cliente temporário
+    const [tempUser] = await sql`
+      SELECT * FROM clientes_temp WHERE email = ${email} AND confirmation_code = ${confirmationCode}
+    `;
+
+    if (!tempUser) {
+      return res.status(404).json({ success: false, message: 'Código de confirmação inválido ou expirado.' });
+    }
+
+    // Criar cliente definitivo
+    const novoCliente = await sql`
+      INSERT INTO clientes (nome, email, telefone, senha)
+      VALUES (${tempUser.nome}, ${tempUser.email}, ${tempUser.telefone}, ${tempUser.senha})
+      RETURNING id, nome, email, telefone;
+    `;
+
+    // Remover cliente temporário
+    await sql`
+      DELETE FROM clientes_temp WHERE email = ${email}
+    `;
+
+    // Gerar token JWT
+    const token = jwt.sign(
+      {
+        id: novoCliente[0].id,
+        nome: novoCliente[0].nome,
+        email: novoCliente[0].email,
+        telefone: novoCliente[0].telefone
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    console.log('[POST /clientes/confirm] Cliente confirmado e criado:', novoCliente[0]);
+    res.status(201).json({ success: true, data: novoCliente[0], token });
+  } catch (error) {
+    console.error('[POST /clientes/confirm] Erro na função confirmarCliente:', error);
+    res.status(500).json({ success: false, message: 'Erro interno no servidor' });
   }
 };

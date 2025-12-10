@@ -12,7 +12,9 @@ import {
   atualizarFotoPerfil,
   enviarTokenRecuperacao,
   verificarTokenRecuperacao,
-  redefinirSenhaPorEmail
+  redefinirSenhaPorEmail,
+  criarClienteTemporario,
+  confirmarCliente
 } from '../controllers/clientesController.js';
 
 
@@ -32,5 +34,11 @@ router.post('/send-token-verify', verificarTokenRecuperacao);
 // Rota para redefinir senha usando email
 router.post('/update-password', redefinirSenhaPorEmail);
 router.put('/:id/ft_perfil', upload.single('ft_perfil'), atualizarFotoPerfil);
+
+// Rota para criar cliente temporário e enviar código de confirmação
+router.post('/temp', criarClienteTemporario);
+
+// Rota para confirmar código e criar cliente definitivo
+router.post('/confirm', confirmarCliente);
 
 export default router;
